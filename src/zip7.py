@@ -1,12 +1,26 @@
-from dataclasses import dataclass, field
-from typing import List
+from dataclasses import dataclass
 from pwn import u8, u16, u32, u64, p8
 from zip7bytestream import Zip7ByteStream
+
+'''
+    TODO List:
+    
+    1. Move read_number to the bytestream class along with the pwn stuff and handle all of the unpacking there
+    2. Remove pwn dependency in general
+    3. Either remove the dataclass vars or define them all more robustly. In favor of removing them.
+    4. Move the vars between the sections more appropriately (lots in .footer should be in .body/etc)
+    5. Develop other files
+    6. Build out repo with appropriate readme/contribute files
+
+'''
 
 class Zip7(object):
     # Constants related to the file format
     MAGIC = b'7z\xBC\xAF\x27\x1C'
-    LZMA_ENCODING = 0x30101
+    ACCEPTED_ENCODINGS = {
+        'LZMA': 0x30101,
+        'LZMA2': 0x21
+    }
     HEADER_LEN = 0x20
     UNIMPLEMENTED = [
         0x02, 0x03, 0x04, 0x05,
@@ -75,7 +89,7 @@ class Zip7(object):
         # Verify the file is 7zip
         if not ignore_magic:
             if self.data[:len(self.MAGIC)] != self.MAGIC:
-                raise Zip7Exception('Not a 7zip file.')
+                raise Zip7FileException('Not a 7zip file.')
 
         # Perform various data parsing to populate the class information
         self.parse_header()
@@ -104,14 +118,14 @@ class Zip7(object):
         self.footer.stream = Zip7ByteStream(self.footer.data)
         while not self.footer.stream.eof():
             opcode = u8(self.footer.stream.read(1))
-            print('%02x' % opcode)
+            #print('%02x' % opcode)
             self.footer_process(opcode)
 
     # Process the footer opcodes
     def footer_process(self, opcode):
         if len(self.footer.expected):
             if opcode not in self.footer.expected:
-                raise Zip7Exception('Invalid opcode pattern (%02x came after %02x).' % (opcode, self.footer.stream._stream[self.footer.stream._position-2]))
+                raise Zip7UnknownException('Invalid opcode pattern (%02x came after %02x).' % (opcode, self.footer.stream._stream[self.footer.stream._position-2]))
 
         self.footer.expected = []
         # kEnd
@@ -125,6 +139,11 @@ class Zip7(object):
         # MainStreamsInfo
         if opcode == 0x04: # Unpacked header follow-up data
             self.footer.expected = [0x06] # PackInfo
+            return
+        # FilesInfo
+        if opcode == 0x05: # Get file data when it's available within the footer
+            self.footer.num_files = self.read_number()
+            self.footer.expected = [0x0E, 0x0F, 0x19]
             return
         # PackInfo
         if opcode == 0x06: # The second byte following 0x17 - PackedHeader
@@ -147,7 +166,7 @@ class Zip7(object):
         if opcode == 0x0A:
             crc_bool = u8(self.footer.stream.read(1))
             if not crc_bool:
-                raise Zip7Exception('CRC Boolean is false, not implemented.')
+                raise Zip7UnimplementedException('CRC Boolean is false, not implemented.')
 
             self.packed.crc = self.footer.stream.read(4)
             self.footer.expected = [0x00]
@@ -155,10 +174,10 @@ class Zip7(object):
         # Folder
         if opcode == 0x0B:
             self.footer.folders = u8(self.footer.stream.read(1))
-            # Determine if the folder is "Ext" or not - no idea what this means
-            is_ext = u8(self.footer.stream.read(1))
-            if is_ext:
-                raise Zip7Exception("'Ext' is unimplemented functionality.")
+            # Determine if the folder is external
+            external = u8(self.footer.stream.read(1))
+            if external:
+                raise Zip7UnimplementedException("External folders are not implemented.")
             else:
                 # Get the number of encoders
                 self.footer.num_encoders = u8(self.footer.stream.read(1))
@@ -178,15 +197,14 @@ class Zip7(object):
 
                 # Get the number of encodings used
                 if enc.flag_complex:
-                    raise Zip7Exception('Cannot handle complex encoders.')
+                    raise Zip7UnimplementedException('Complex encoders are not implemented.')
 
-                enc.count = 1 # Otherwise determined by enc.flag_complex
-                # Get the encodings
-                for i in range(enc.count):
-                    enc.encoding_id = u32(b'\x00' + self.footer.stream.read(3), endian='big')
+                # Get the encoder
+                padding = 4 - enc.flag_size
+                enc.encoding_id = u32((b'\x00' * padding) + self.footer.stream.read(enc.flag_size), endian='big')
 
-                if enc.encoding_id != self.LZMA_ENCODING:
-                    raise Zip7Exception('Only LZMA compression supported.')
+                if enc.encoding_id not in self.ACCEPTED_ENCODINGS.values():
+                    raise Zip7UnimplementedException('Only LZMA & LZMA2 compression supported.')
 
                 # TODO: Maybe. NumInStreams/NumOutStreams are for Complex Codecs only - Skipping
                 # Address attributes/properties
@@ -200,17 +218,67 @@ class Zip7(object):
         # EncoderUnpackSize
         if opcode == 0x0C:
             self.footer.encoder_unpack_size = self.read_number()
-            # Next up: either UnpackDigest or END
-            self.footer.expected = [0x0A, 0x00]
+            # TODO: Strangely, I've found 7z's that have extra data here until 0x0A? But 0x0A is optional
+            # No GOOD fix really addresses it. For now, just skip them until getting to 0x0A
+            # If anyone knows anything about this, please let me know!
+            while u8(self.footer.stream.read()) != 0x0A:
+                if self.footer.stream.eof():
+                    raise Zip7UnknownException('Files without UnpackDigest CRCs not supported due to weird bug.')
+
+            return self.footer_process(0x0A)
+        # FileName
+        if opcode == 0x11:
+            # Get the length of the file's name
+            name_len = self.read_number()
+            external = u8(self.footer.stream.read(1))
+            if external:
+                raise Zip7UnimplementedException('External FileName Streams are not implemented.')
+
+            self.footer.file_name = self.footer.stream.read(name_len - 1).decode('utf-16')
+            self.expected = [0x00, 0x14, 0x19]
+            return
+        # MTime
+        if opcode == 0x14:
+            # Get the length of MTime
+            mtime_size = self.read_number()
+            external = u8(self.footer.stream.read(1))
+            if external:
+                self.footer.mtime_info = self.footer.stream.read(mtime_size-1)
+            else:
+                raise Zip7UnimplementedException('Internal MTime values not implemented.')
+
+            self.footer.expected = [0x12, 0x13, 0x15]
+            return
+        # Attributes
+        if opcode == 0x15:
+            # Get attribute length
+            attribute_size = self.read_number()
+            external = u8(self.footer.stream.read(1))
+            if external:
+                self.footer.attribute_info = self.footer.stream.read(attribute_size-1)
+            else:
+                raise Zip7UnimplementedException('Internal Attribute values not implemented.')
+
+            self.footer.expected = [0x00]
             return
         # EncodedHeader
         if opcode == 0x17:
             self.footer.type = "Packed"
             self.footer.expected = [0x06]
             return
+        # "Dummy" AKA nop
+        if opcode == 0x19:
+            nop_count = self.read_number()
+            for i in range(nop_count):
+                test_data = self.footer.stream.read(1)
+                if u8(test_data) != 0x00:
+                    raise Zip7FileException('Data found which should have been 0x00s for nopping: %02x' % test_data)
+            # Perhaps I should have expected follow-ups here, but I don't know where all nop can go
+            return
+
         # Many opcodes aren't usually in 7zip, and so are not implemented here
         if opcode in self.UNIMPLEMENTED:
-            raise Zip7Exception('Opcode %02x not implemented.' % opcode)
+            raise Zip7UnknownException('Opcode %02x not implemented or maybe invalid.' % opcode)
 
     # Helper function that supports the way that 7zip chooses to store lengths into variable amounts of bytes
     def read_number(self):
@@ -224,8 +292,6 @@ class Zip7(object):
 
         return k_size
 
-
-
     def parse_body(self):
         pass
 
@@ -234,5 +300,18 @@ class Zip7(object):
 
 
 
-class Zip7Exception(Exception):
+class Zip7FileException(Exception):
+    # Exceptions that occur because the file is not conforming to the standard
     pass
+
+
+class Zip7UnimplementedException(Exception):
+    # Exceptions that occur because this library was not developed to fully implement every piece of 7z functionality
+    pass
+
+
+class Zip7UnknownException(Exception):
+    # Exceptions that occur because of an unknown cause or a misunderstanding of the literature
+    pass
+
+
