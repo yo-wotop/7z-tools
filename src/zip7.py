@@ -1,4 +1,5 @@
 from zip7helpers import *
+import zlib
 import struct
 
 '''
@@ -22,6 +23,7 @@ class Zip7(object):
 
     # Constructor
     def __init__(self, file_name, ignore_magic=False):
+        self.file_name = file_name
         # Open file and grab data
         with open(file_name, 'rb') as z:
             self.data = z.read()
@@ -50,14 +52,17 @@ class Zip7(object):
         # Extract information about the file and footer from the header
         self.header.data = data = self.data[:self.HEADER_LEN]
         self.header.version = struct.unpack('>H', data[0x6:0x8])[0]
-        self.header.header_crc = struct.unpack('>I', data[0x8:0xC])[0]
+        self.header.header_crc = struct.unpack('<I', data[0x8:0xC])[0]
+        self.header.header_crc_valid = (self.header.header_crc == zlib.crc32(data[0xC:self.HEADER_LEN]))
         # The following footer information comes FROM the header
         self.header.footer_start = self.HEADER_LEN + struct.unpack('<Q', data[0xC:0x14])[0]
         self.header.footer_length = struct.unpack('<Q', data[0x14:0x1C])[0]
-        self.header.footer_crc = struct.unpack('>I', data[0x1C:self.HEADER_LEN])[0]
+        self.header.footer_crc = struct.unpack('<I', data[0x1C:self.HEADER_LEN])[0]
+        # Populate the footer data and use it to validate the footer CRC
+        self.footer.data = self.data[self.header.footer_start:self.header.footer_start + self.header.footer_length]
+        self.header.footer_crc_valid = (self.header.footer_crc == zlib.crc32(self.footer.data))
 
     def parse_footer(self):
-        self.footer.data = self.data[self.header.footer_start:self.header.footer_start + self.header.footer_length]
         self.footer.stream = Zip7ByteStream(self.footer.data)
         while not self.footer.stream.eof():
             opcode = self.footer.stream.read_int()
@@ -237,3 +242,28 @@ class Zip7(object):
         self.steg.bottom_start = self.header.footer_start + self.header.footer_length
         self.steg.bottom_length = len(self.data) - self.steg.bottom_start
         self.steg.bottom_data = self.data[self.steg.bottom_start: self.steg.bottom_start + self.steg.bottom_length]
+
+    def save(self, file_name='', file_overwrite=False, update_crcs=True):
+        if not file_name:
+            if not file_overwrite:
+                file_name = ''.join(self.file_name.split('.')[:-1]) + '_EDITED.7z'
+            else:
+                file_name = self.file_name
+
+        # Fixing CRCs in the header if necessary
+        if update_crcs:
+            mutable_header_data = bytearray(self.header.data)
+            new_footer_crc = struct.pack('<I', zlib.crc32(self.footer.data))
+            mutable_header_data[0x1C:self.HEADER_LEN] = new_footer_crc
+
+            new_header_crc = struct.pack('<I', zlib.crc32(mutable_header_data[0x0C:self.HEADER_LEN]))
+            mutable_header_data[0x08:0x0C] = new_header_crc
+            self.header.data = bytes(mutable_header_data)
+
+
+        write_data = self.header.data + self.body.data + self.steg.center_data + self.footer.data + self.steg.bottom_data
+        with open(file_name, 'wb+') as f:
+            f.write(write_data)
+
+
+

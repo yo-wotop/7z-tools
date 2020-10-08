@@ -2,27 +2,35 @@
 import argparse
 import zip7
 
-DIVIDER = '================================'
-PRINT_HEADER = """------- Header Properties ------
-Magic - - - - - - {magic}
-Version - - - - - {version}
-Header CRC- - - - {header_crc:x}
-Footer Start- - - 0x{footer_start:x}
-Footer Length - - 0x{footer_length:x}
-Footer CRC- - - - {footer_crc}"""
-PRINT_FOOTER = """------- Footer Properties ------
-Data Offset - - - 0x{data_offset:x}
-Pack Size(s)- - - {pack_sizes}
-Compression - - - {compression}"""
-PRINT_BODY = """-------- Body Properties -------
-Body Length - - - 0x{length:x}"""
-PRINT_STEG ="""-------- Steg Properties -------
-Center Start- - - 0x{center_start:x}
-Center Length - - 0x{center_length:x}
-Center Data - - - {center_data}
-Bottom Start- - - 0x{bottom_start:x}
-Bottom Length - - 0x{bottom_length:x}
-Bottom Data - - - {bottom_data}"""
+"""
+For extracting metadata about 7z files.
+
+The library parses more data than is displayed below; tweak as necessary.
+"""
+
+DIVIDER = '====================================='
+PRINT_HEADER = """--------- Header Properties ---------
+Magic - - - - - - - - {magic}
+Version - - - - - - - {version}
+Header CRC- - - - - - 0x{header_crc:x}
+Header CRC Valid? - - {header_crc_valid}
+Footer Start- - - - - 0x{footer_start:x}
+Footer Length - - - - 0x{footer_length:x}
+Footer CRC- - - - - - 0x{footer_crc:x}
+Footer CRC Valid? - - {footer_crc_valid}"""
+PRINT_FOOTER = """--------- Footer Properties ---------
+Data Offset - - - - - 0x{data_offset:x}
+Pack Size(s)- - - - - {pack_sizes}
+Compression - - - - - {compression}"""
+PRINT_BODY = """---------- Body Properties ----------
+Body Length - - - - - 0x{length:x}"""
+PRINT_STEG ="""---------- Steg Properties ----------
+Center Start- - - - - 0x{center_start:x}
+Center Length - - - - 0x{center_length:x}
+Center Data - - - - - {center_data}
+Bottom Start- - - - - 0x{bottom_start:x}
+Bottom Length - - - - 0x{bottom_length:x}
+Bottom Data - - - - - {bottom_data}"""
 
 def main():
     # Set up argparse
@@ -59,9 +67,11 @@ def main():
             "magic": ''.join(str(file.header.magic).split('"')[1:-1]),
             "version": file.header.version,
             "header_crc": file.header.header_crc,
+            "header_crc_valid": file.header.header_crc_valid,
             "footer_start": file.header.footer_start,
             "footer_length": file.header.footer_length,
-            "footer_crc": file.header.footer_crc
+            "footer_crc": file.header.footer_crc,
+            "footer_crc_valid": file.header.footer_crc_valid
         }
         print(PRINT_HEADER.format(**header_data))
     # Print out footer information

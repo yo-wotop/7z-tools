@@ -8,9 +8,11 @@ class Header:
     magic: [bytes] = b''
     version: int = 0
     header_crc: [bytes] = b''
+    header_crc_valid: bool = False
     footer_start: int = 0
     footer_length: int = 0
     footer_crc: [bytes] = b''
+    footer_crc_valid: bool = False
     data: [bytes] = b''
 
 @dataclass

@@ -10,15 +10,14 @@ Comes with the following functionality:
   * Useful for custom script parsing of files
 * Script: parse7z.py
   * Run against a target file to view variety of file metadata (see example below)
-* Script: fix7z.py
-  * Fixes corrupt 7z files that are properly constructed but have one of the following errors:
+* Script: fix_header.py
+  * Fixes corrupt 7z files that are properly constructed but have broken headers:
     * Invalid magic bytes
     * Incorrect CRCs
   * Note: These fixes are intended to fix *intentional* 7zip destructions, such as challenges in CTFs or when you are trying to inject steganography and need to fix the CRCs. It cannot restore 7zip files that have been truncated or corrupted and have lost data.
-  * WIP
 * Script: 7zsteg.py
   * Allows for the injection or extraction of steganographic data from 7zips, either from between the body and footer sections or after the bottom of the file.
-  * WIP
+  * One file may be specified (for injection or extraction), or the injection/extraction may be striped across many files
 
 ## Contributions
 

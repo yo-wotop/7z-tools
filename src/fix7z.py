@@ -1,1 +1,0 @@
-# For fixing various headers (length, footer start, CRCs, etc) on 7z's

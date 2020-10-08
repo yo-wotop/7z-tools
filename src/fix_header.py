@@ -4,16 +4,8 @@ import zip7
 import struct
 
 """
-For injecting or extracting steganographic data from 7z files.
-
-TODO:
-    1. Argparse with interdependence
-        file
-        outfile (optional)
-        location (center, bottom)
-        extract VS inject
-        single file VS striped
-    2. implement the above, heh
+For fixing broken headers (i.e., primarily CRCs)
+Also intended as a primer to see how to make a script using the zip7 core library
 """
 
 def main():
