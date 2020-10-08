@@ -4,8 +4,7 @@ import struct
 '''
     TODO List:
     
-    1. Implement CRC + Develop other files
-    2. Build out repo with appropriate readme/contribute files
+    1. Implement CRC + Develop other files (7zsteg & parse7z)
 
 '''
 
