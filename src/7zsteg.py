@@ -79,6 +79,7 @@ def inject_files(files, all_data, center):
 
     # The reason to separate these is for batching: decrease odds of a partial-injection due to an error in later files
     for file in zips:
+        file.update_header()
         file.save(file_overwrite=True, update_crcs=True)
 
 # For dividing up data ~equally among large chunks
@@ -92,7 +93,7 @@ def create_chunks(data, i):
 def inject(file, data, center):
     if center:
         file.steg.center_data = data
-        file.header.footer_start += len(data)
+        file.header.footer_start = file.steg.center_start - file.HEADER_LEN + len(data)
     else:
         file.steg.bottom_data = data
 
