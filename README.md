@@ -14,10 +14,10 @@ Comes with the following functionality:
   * Fixes corrupt 7z files that are properly constructed but have broken headers:
     * Invalid magic bytes
     * Incorrect CRCs
-  * Note: These fixes are intended to fix *intentional* 7zip destructions, such as challenges in CTFs or when you are trying to inject steganography and need to fix the CRCs. It cannot restore 7zip files that have been truncated or corrupted and have lost data.
+  * Note: These fixes are intended to fix *intentional* 7zip destructions, such as challenges in CTFs or when you are trying to inject steganography or random stuff and need to fix the CRCs. It cannot restore 7zip files that have been truncated or corrupted and have lost data.
 * Script: 7zsteg.py
   * Allows for the injection or extraction of steganographic data from 7zips, either from between the body and footer sections or after the bottom of the file.
-  * One file may be specified (for injection or extraction), or the injection/extraction may be striped across many files
+  * One file may be specified (for injection or extraction), or the injection/extraction may be striped across many files.
 
 ## Contributions
 
@@ -27,12 +27,11 @@ Please follow the standing formatting, which are *generally* PEP8-esque. Use `lo
 
 ## Installation
 
-Python 3.7+ is required in order to use dataclasses. A lower version of Python3 may be used if a user replaces all instances of dataclasses with normal classes, as this won't impact core functionality. The `dataclasses` module may be pip installed directly (`pip install dataclasses`), or included via: 
+Python 3.7+ is required in order to use dataclasses. Additional modules may be added through pip:   
 
 ```
 pip install -r requirements.txt
 ```
-
 
 ## Usage
 
@@ -60,33 +59,100 @@ optional arguments:
 If no switches are specified, all default output will be included:
 
 ```
-$ ./parse7z.py sample.7z
-================================
-------- Header Properties ------
-Magic - - - - - - 7z\xbc\xaf'\x1c
-Version - - - - - 4
-Header CRC- - - - 3ce824e7
-Footer Start- - - 0x211
-Footer Length - - 0x23
-Footer CRC- - - - 1198214364
-================================
-------- Footer Properties ------
-Data Offset - - - 0x160
-Pack Size(s)- - - [0x80]
-Compression - - - LZMA
-================================
--------- Body Properties -------
-Body Length - - - 0x1e0
-================================
--------- Steg Properties -------
-Center Start- - - 0x200
-Center Length - - 0x11
-Center Data - - - b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00'
-Bottom Start- - - 0x234
-Bottom Length - - 0x0
-Bottom Data - - - b''
-================================
+$ ./parse7z.py sample_with_png_stego.7z
+=====================================
+--------- Header Properties ---------
+Magic - - - - - - - - 7z\xbc\xaf'\x1c
+Version - - - - - - - 4
+Header CRC- - - - - - 0xe724e83c
+Header CRC Valid? - - True
+Footer Start- - - - - 0x211
+Footer Length - - - - 0x23
+Footer CRC- - - - - - 0xdc4c6b47
+Footer CRC Valid? - - True
+=====================================
+--------- Footer Properties ---------
+Data Offset - - - - - 0x160
+Pack Size(s)- - - - - [0x80]
+Compression - - - - - LZMA
+=====================================
+---------- Body Properties ----------
+Body Length - - - - - 0x1e0
+=====================================
+---------- Steg Properties ----------
+Center Start- - - - - 0x200
+Center Length - - - - 0x11
+Center Data - - - - - b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00'
+Bottom Start- - - - - 0x234
+Bottom Length - - - - 0x0
+Bottom Data - - - - - b''
+=====================================
 ```
+
+#### fix_header.py
+
+Run it against a target 7zip file and it will correct the magic header, version information, and CRCs. Useful primarily as an example for working with the `Zip7` library or for just messing around with 7z files. By specifying an optional outfile (`-o`), the script will output the fixed 7z file without editing the original.
+
+```
+./fix_header.py --help
+usage: fix_header.py [-h] [-o OUT_FILE] FILENAME
+
+Fixes header metadata for 7z files.
+
+positional arguments:
+  FILENAME              7zip file that needs to be fixed
+
+optional arguments:
+  -h, --help            show this help message and exit
+  -o OUT_FILE, --out-file OUT_FILE
+                        Output file name for fixed 7z file
+
+```
+
+#### 7zsteg.py
+
+This tool may be used to arbitrarily extract steganographic data from or inject data into 7z files.
+
+```
+./7zsteg.py --help
+usage: 7zsteg.py [-h] [-r] [-c/-b] [-d DATA_FILE] PATTERN
+
+Allows for the injection or extraction of steganographic data from 7z files.
+
+positional arguments:
+  PATTERN       pattern for files (?/* are wildcards); if more than one file is matched, the steganographic data will be striped across all matching files in alphabetical order
+
+optional arguments:
+  -h, --help    show this help message and exit
+  -r            use regular expression for matching patterns
+  -c/-b         steganographic data location; DEFAULT center (-c) or bottom (-b)
+  -d DATA_FILE  if provided, data from DATA_FILE will be injected; otherwise, the script will extract
+```
+
+The required argument `PATTERN` is, by default, an `fnmatch`-style pattern used to match the targeted 7z file(s). An exact name may be provided if one wishes to extract/inject with a single file, or a pattern matching many files (such as `sample_*.7z`) may be provided. If the pattern matches more than one file, the data will be injected striped across all files (alphabetically) that it matches. If extraction is specified, data will be extracted (striped) from all files before being concatenated in `stdout`.  
+
+The `-r` switch may be used instead to match `PATTERN` as a Regular Expression. Please note that all Regular Expression matches are in the form of `^{input}\.7z$`.  
+
+In addition, the `-c` and `-b` switches dictate the position of where the steganographic data will be read from or written to. This script primarily acknowledges two locations to hide steganographic data: the center (between the packed body and the footer) and the bottom (below the footer). By default, the center (`-c`) is selected. Only one may be used at a time, although any file may have data in both locations.
+
+##### Injection
+
+To inject data, the `-d` option **must** be specified. This points to a valid file containing the data that you wish to inject into the 7z archive(s).
+
+For example, if you wish to inject a cat picture (`cat.png`), within the bottom area (`-b`), striped across ALL files like `sample_#.7z`, the following payload may be used:  
+
+```
+./7zsteg.py -d cat.png -b sample_*.7z
+```
+
+##### Extraction
+
+In order to extract data, simply do not specify the `-d` option. For example, if you wish to extract the PNG file into from the *Injection* section, using a Regular Expression, into `test.png`, it may be done as follows:
+
+```
+./7zsteg.py -b -r sample_\\d+ > test.png
+```  
+
 
 #### Zip7 Core
 

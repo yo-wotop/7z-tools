@@ -3,10 +3,7 @@ import zlib
 import struct
 
 '''
-    TODO List:
-    
-    1. Implement CRC + Develop other files (7zsteg & parse7z)
-
+Core 7z file parser. Has a decent bit of unimplemented functionality: CTRL-F "UnimplementedException"
 '''
 
 class Zip7(object):
@@ -243,6 +240,17 @@ class Zip7(object):
         self.steg.bottom_length = len(self.data) - self.steg.bottom_start
         self.steg.bottom_data = self.data[self.steg.bottom_start: self.steg.bottom_start + self.steg.bottom_length]
 
+    # Propagate changes made to self.header vars to the actual self.header.data
+    def update_header(self):
+        data = self.header.magic
+        data += struct.pack('>H', self.header.version)
+        data += struct.pack('<I', 0) # Header CRC placeholder
+        data += struct.pack('<Q', self.header.footer_start)
+        data += struct.pack('<Q', self.header.footer_length)
+        data += struct.pack('<I', 0) # Footer CRC placeholder
+        self.header.data = data
+
+    # Commit changes (specifically: the .data sections) to the actual file (or a new file)
     def save(self, file_name='', file_overwrite=False, update_crcs=True):
         if not file_name:
             if not file_overwrite:

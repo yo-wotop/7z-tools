@@ -2,6 +2,11 @@ from dataclasses import dataclass, field
 from zip7bytestream import Zip7ByteStream
 from typing import List
 
+"""
+Helper class
+Primarily just for defining data classes and exceptions within the main library
+"""
+
 ## Define data classes for use in the class
 @dataclass
 class Header:

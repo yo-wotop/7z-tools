@@ -27,16 +27,13 @@ def main():
         return 1
 
     # Recreate the header from scratch
-    new_header_data = file.MAGIC # Magic bytes
-    new_header_data += struct.pack('>H', 4) # Version 4
-    new_header_data += struct.pack('<I', 0) # Placeholder for header CRC
-    # We'll import the footer start/length
-    new_header_data += struct.pack('<Q', file.header.footer_start - file.HEADER_LEN) # Footer start
-    new_header_data += struct.pack('<Q', file.header.footer_length) # Footer length
-    new_header_data += struct.pack('<I', 0) # Placeholder for footer CRC
+    file.header.magic = file.MAGIC
+    file.header.version = 4
+    file.header.footer_start = file.header.footer_start - file.HEADER_LEN
+    file.header.footer_length = file.header.footer_length
 
-    # Push it to the file header data and save the file
-    file.header.data = new_header_data
+    # Save the file
+    file.update_header()
     file.save(file_name=out_file, update_crcs=True)
     print('Fixed file output saved to: %s' % out_file)
 
